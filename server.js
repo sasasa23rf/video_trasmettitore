@@ -1,8 +1,6 @@
-// server.js
 const http = require("http");
 const WebSocket = require("ws");
 
-// Semplice registry degli ultimi peer connessi
 let lastViewer = null;
 let lastDevice = null;
 
@@ -18,20 +16,16 @@ wss.on("connection", (ws) => {
     let data;
     try { data = JSON.parse(message); } catch { return; }
 
-    // Registra i peer per ruolo
     if (data.type === "offer" && data.role === "viewer") {
       lastViewer = ws;
-      // inoltra l'offerta al device se presente
       if (lastDevice && lastDevice.readyState === WebSocket.OPEN) {
         lastDevice.send(JSON.stringify(data));
       }
     } else if (data.type === "answer" && data.role === "device") {
-      // inoltra la answer al viewer
       if (lastViewer && lastViewer.readyState === WebSocket.OPEN) {
         lastViewer.send(JSON.stringify(data));
       }
     } else if (data.type === "ice") {
-      // inoltra ICE in base al ruolo
       if (data.role === "viewer") {
         if (lastDevice && lastDevice.readyState === WebSocket.OPEN) {
           lastDevice.send(JSON.stringify(data));
