@@ -1,17 +1,11 @@
 {
-  "name": "webrtc-signaling-server",
+  "name": "webrtc-signaling",
   "version": "1.0.0",
-  "description": "Signaling server for WebRTC video transmission via WebSocket",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "ws": "^8.13.0"
-  },
-  "engines": {
-    "node": ">=16.0.0"
-  },
-  "author": "Salvatore Costantino",
-  "license": "MIT"
+    "ws": "^8.18.0"
+  }
 }
