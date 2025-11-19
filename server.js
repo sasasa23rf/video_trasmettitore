@@ -8,11 +8,11 @@ function ts() {
 
 console.log(`${ts()} Signaling: avviato, porta ${process.env.PORT || 8080}`);
 
-const clients = new Map(); // ws -> { role, id, lastSeen }
+const clients = new Map(); // ws -> { role, id, lastSeen, remote }
 
 server.on('connection', (ws, req) => {
   const id = Math.random().toString(36).slice(2, 10);
-  const remote = req.socket.remoteAddress + ':' + req.socket.remotePort;
+  const remote = (req.socket.remoteAddress || '') + ':' + (req.socket.remotePort || '');
   clients.set(ws, { id, role: null, lastSeen: Date.now(), remote });
   console.log(`${ts()} Connessione aperta id=${id} remote=${remote} totalClients=${clients.size}`);
 
@@ -35,6 +35,7 @@ server.on('connection', (ws, req) => {
 
     const info = clients.get(ws) || {};
     info.lastSeen = Date.now();
+
     if (parsed.role) {
       info.role = parsed.role;
       clients.set(ws, info);
@@ -42,9 +43,10 @@ server.on('connection', (ws, req) => {
       return;
     }
 
+    // Log dettagliato del messaggio
     console.log(`${ts()} id=${id} message: keys=[${Object.keys(parsed).join(',')}]`);
 
-    // Broadcast verso gli altri client: semplice forward di signaling
+    // Forward: inoltra il messaggio a tutti gli altri client aperti
     server.clients.forEach((client) => {
       if (client !== ws && client.readyState === WebSocket.OPEN) {
         try {
@@ -68,7 +70,7 @@ server.on('connection', (ws, req) => {
   });
 });
 
-// Simple interval to ping clients and drop dead ones
+// Interval: ping clients e drop dead ones
 const interval = setInterval(() => {
   server.clients.forEach((ws) => {
     if (ws.isAlive === false) {
