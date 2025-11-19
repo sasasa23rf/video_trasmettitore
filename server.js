@@ -1,54 +1,94 @@
 // server.js
 const WebSocket = require('ws');
+const server = new WebSocket.Server({ port: process.env.PORT || 8080 });
 
-const PORT = process.env.PORT || 1234;
-const wss = new WebSocket.Server({ port: PORT });
-
-let sender = null;
-let receiver = null;
-
-function safeSend(ws, payload) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(payload));
-  }
+function ts() {
+  return new Date().toISOString();
 }
 
-wss.on('listening', () => {
-  console.log('Server: WebSocket in ascolto sulla porta', PORT);
-});
+console.log(`${ts()} Signaling: avviato, porta ${process.env.PORT || 8080}`);
 
-wss.on('connection', (ws) => {
-  console.log('Server: nuovo client connesso');
+const clients = new Map(); // ws -> { role, id, lastSeen }
 
-  ws.on('message', (message) => {
-    let data;
-    try { data = JSON.parse(message); } catch (e) {
-      console.log('Server: messaggio non JSON, ignorato.');
+server.on('connection', (ws, req) => {
+  const id = Math.random().toString(36).slice(2, 10);
+  const remote = req.socket.remoteAddress + ':' + req.socket.remotePort;
+  clients.set(ws, { id, role: null, lastSeen: Date.now(), remote });
+  console.log(`${ts()} Connessione aperta id=${id} remote=${remote} totalClients=${clients.size}`);
+
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+    const info = clients.get(ws) || {};
+    info.lastSeen = Date.now();
+    clients.set(ws, info);
+  });
+
+  ws.on('message', (data) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(data);
+    } catch (e) {
+      console.log(`${ts()} id=${id} messaggio non JSON: ${data}`);
       return;
     }
 
-    if (data.role === 'sender') {
-      sender = ws;
-      console.log('Server: sender collegato');
-    } else if (data.role === 'receiver') {
-      receiver = ws;
-      console.log('Server: receiver collegato');
+    const info = clients.get(ws) || {};
+    info.lastSeen = Date.now();
+    if (parsed.role) {
+      info.role = parsed.role;
+      clients.set(ws, info);
+      console.log(`${ts()} id=${id} set role=${parsed.role}`);
+      return;
     }
 
-    if (data.sdp) {
-      console.log(`Server: SDP ${data.sdp.type} ricevuta da ${data.role}, inoltro...`);
-      if (data.role === 'sender' && receiver) safeSend(receiver, { sdp: data.sdp });
-      if (data.role === 'receiver' && sender) safeSend(sender, { sdp: data.sdp });
-    }
+    console.log(`${ts()} id=${id} message: keys=[${Object.keys(parsed).join(',')}]`);
 
-    // Non usiamo trickle ICE: nessun inoltro di candidate singoli
-    if (data.candidate) {
-      console.log(`Server: candidate ricevuto da ${data.role} (non usato in questa configurazione senza trickle).`);
-    }
+    // Broadcast verso gli altri client: semplice forward di signaling
+    server.clients.forEach((client) => {
+      if (client !== ws && client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(JSON.stringify(parsed));
+        } catch (err) {
+          console.log(`${ts()} id=${id} errore invio a client: ${err}`);
+        }
+      }
+    });
   });
 
-  ws.on('close', () => {
-    if (ws === sender) { sender = null; console.log('Server: sender disconnesso'); }
-    if (ws === receiver) { receiver = null; console.log('Server: receiver disconnesso'); }
+  ws.on('close', (code, reason) => {
+    const info = clients.get(ws) || {};
+    console.log(`${ts()} Connessione chiusa id=${id} role=${info.role} remote=${info.remote} code=${code} reason=${reason}`);
+    clients.delete(ws);
   });
+
+  ws.on('error', (err) => {
+    const info = clients.get(ws) || {};
+    console.log(`${ts()} Errore su id=${id} role=${info.role} remote=${info.remote} err=${err}`);
+  });
+});
+
+// Simple interval to ping clients and drop dead ones
+const interval = setInterval(() => {
+  server.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      const info = clients.get(ws) || {};
+      console.log(`${ts()} Client non risponde, chiusura id=${info.id} role=${info.role}`);
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch (e) {
+      const info = clients.get(ws) || {};
+      console.log(`${ts()} Ping fallito per id=${info.id} role=${info.role} err=${e}`);
+    }
+  });
+}, 20000);
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log(`${ts()} Signaling: SIGINT ricevuto, chiudo server`);
+  clearInterval(interval);
+  server.close(() => process.exit(0));
 });
