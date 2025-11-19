@@ -1,7 +1,7 @@
 {
-  "name": "webrtc-video-streamer",
+  "name": "webrtc-video-receiver",
   "version": "1.0.0",
-  "description": "WebRTC video streaming with ExpressTURN",
+  "description": "WebRTC video receiver with ExpressTURN",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,7 +10,7 @@
     "express": "^4.18.2",
     "socket.io": "^4.7.2"
   },
-  "keywords": ["webrtc", "video", "streaming", "expressturn"],
+  "keywords": ["webrtc", "video", "receiver"],
   "author": "Your Name",
   "license": "MIT"
 }
