@@ -12,13 +12,6 @@
   "engines": {
     "node": ">=16.0.0"
   },
-  "keywords": [
-    "webrtc",
-    "signaling",
-    "websocket",
-    "video",
-    "render"
-  ],
   "author": "Salvatore Costantino",
   "license": "MIT"
 }
