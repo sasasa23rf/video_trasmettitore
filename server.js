@@ -29,8 +29,11 @@ io.on('connection', (socket) => {
     console.log('Sender registered:', sender);
     socket.emit('registered', { role: 'sender' });
     
+    // Notifica sia il receiver che il sender è pronto
     if (receiver) {
       io.to(receiver).emit('sender-ready');
+      // Notifica il sender che può iniziare (receiver già connesso)
+      socket.emit('receiver-ready');
     }
   });
 
