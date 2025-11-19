@@ -1,54 +1,69 @@
 // server.js
-const WebSocket = require('ws');
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 
-const PORT = process.env.PORT || 1234;
-const wss = new WebSocket.Server({ port: PORT });
-
-let sender = null;
-let receiver = null;
-
-function safeSend(ws, payload) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(payload));
-  }
-}
-
-wss.on('listening', () => {
-  console.log('Server: WebSocket in ascolto sulla porta', PORT);
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
 });
 
-wss.on('connection', (ws) => {
-  console.log('Server: nuovo client connesso');
+// Serve static receiver page from /public
+app.use(express.static(path.join(__dirname, 'public')));
 
-  ws.on('message', (message) => {
-    let data;
-    try { data = JSON.parse(message); } catch (e) {
-      console.log('Server: messaggio non JSON, ignorato.');
-      return;
-    }
+let senderSocket = null;
+let receiverSocket = null;
 
-    if (data.role === 'sender') {
-      sender = ws;
-      console.log('Server: sender collegato');
-    } else if (data.role === 'receiver') {
-      receiver = ws;
-      console.log('Server: receiver collegato');
-    }
+io.on('connection', (socket) => {
+  console.log('Client connected', socket.id);
 
-    if (data.sdp) {
-      console.log(`Server: SDP ${data.sdp.type} ricevuta da ${data.role}, inoltro...`);
-      if (data.role === 'sender' && receiver) safeSend(receiver, { sdp: data.sdp });
-      if (data.role === 'receiver' && sender) safeSend(sender, { sdp: data.sdp });
-    }
+  socket.on('create_sender', () => {
+    console.log('Sender registered', socket.id);
+    senderSocket = socket;
+    socket.emit('created', { role: 'sender' });
+  });
 
-    // Non usiamo trickle ICE: nessun inoltro di candidate singoli
-    if (data.candidate) {
-      console.log(`Server: candidate ricevuto da ${data.role} (non usato in questa configurazione senza trickle).`);
+  socket.on('create_receiver', () => {
+    console.log('Receiver registered', socket.id);
+    receiverSocket = socket;
+    socket.emit('created', { role: 'receiver' });
+    if (senderSocket) senderSocket.emit('receiver-ready');
+  });
+
+  // Sender posts offer -> forward to receiver
+  socket.on('offer', (data, cb) => {
+    if (receiverSocket) {
+      receiverSocket.emit('offer', data);
+      cb && cb({ status: 'forwarded' });
+    } else {
+      cb && cb({ error: 'no-receiver' });
     }
   });
 
-  ws.on('close', () => {
-    if (ws === sender) { sender = null; console.log('Server: sender disconnesso'); }
-    if (ws === receiver) { receiver = null; console.log('Server: receiver disconnesso'); }
+  // Receiver posts answer -> forward to sender
+  socket.on('answer', (data) => {
+    if (senderSocket) senderSocket.emit('answer', data);
+  });
+
+  // ICE candidates forwarded between peers
+  socket.on('ice-candidate', (data) => {
+    if (socket.id === (senderSocket && senderSocket.id)) {
+      if (receiverSocket) receiverSocket.emit('ice-candidate', data);
+    } else if (socket.id === (receiverSocket && receiverSocket.id)) {
+      if (senderSocket) senderSocket.emit('ice-candidate', data);
+    } else {
+      socket.broadcast.emit('ice-candidate', data);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected', socket.id);
+    if (senderSocket && socket.id === senderSocket.id) senderSocket = null;
+    if (receiverSocket && socket.id === receiverSocket.id) receiverSocket = null;
   });
 });
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Signaling server running on port ${PORT}`));
