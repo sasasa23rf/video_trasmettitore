@@ -1,7 +1,7 @@
 {
   "name": "webrtc-signaling",
   "version": "1.0.0",
-  "description": "Signaling server for WebRTC sender (Python) -> receiver (browser)",
+  "description": "Signaling server for a Python sender -> Browser receiver WebRTC demo",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
