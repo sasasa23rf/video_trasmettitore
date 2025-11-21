@@ -15,7 +15,6 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 
 // --- CONFIGURAZIONE GLOBALE CONDIVISA ---
-// Questi sono i valori di default. Verranno sovrascritti se qualcuno li cambia dalla UI.
 let currentConfig = {
     target_fps: 50,
     width: 640,
@@ -30,28 +29,37 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
     console.log('Nuovo client connesso:', socket.id);
 
-    // 1. APPENA CONNESSO: Invia la configurazione attuale al nuovo client (sia esso chi guarda o il Raspberry)
+    // 1. Invia config iniziale
     socket.emit('config_updated', currentConfig);
 
-    // 2. RICEZIONE FRAME: Quando arriva un frame dal Raspberry
+    // 2. STREAMING VIDEO (Raspberry -> Browser)
     socket.on('video_frame', (data) => {
         socket.broadcast.emit('stream_display', data);
     });
 
-    // 3. RICHIESTA CONFIG: Se un client chiede esplicitamente la config
+    // 3. CONFIGURAZIONE (Browser <-> Server <-> Raspberry)
     socket.on('get_config', () => {
         socket.emit('config_updated', currentConfig);
     });
 
-    // 4. AGGIORNAMENTO CONFIG: Quando l'utente cambia la qualità dal sito
     socket.on('update_config', (newConfig) => {
         console.log('Nuova configurazione ricevuta:', newConfig);
-        
-        // Aggiorniamo la configurazione in memoria (unendo i vecchi valori con i nuovi)
         currentConfig = { ...currentConfig, ...newConfig };
-
-        // Avvisiamo TUTTI (Soprattutto il Raspberry Pi) che la config è cambiata
         io.emit('config_updated', currentConfig);
+    });
+
+    // 4. SISTEMA VELOCITÀ (Nuovo)
+    // Il browser attiva/disattiva il monitoraggio
+    socket.on('toggle_speed_monitoring', (isActive) => {
+        console.log(`Richiesta monitoraggio velocità: ${isActive}`);
+        // Inoltriamo il comando a TUTTI i dispositivi (incluso il Raspberry con velocita.py)
+        io.emit('set_speed_monitoring', isActive);
+    });
+
+    // Il Raspberry invia i dati di velocità
+    socket.on('speed_data', (data) => {
+        // Inoltriamo i dati al browser per mostrarli
+        socket.broadcast.emit('display_speed', data);
     });
 
     socket.on('disconnect', () => {
